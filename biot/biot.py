@@ -33,14 +33,13 @@ def biotMPET_improved(
     W = FunctionSpace(mesh, W_element)
 
     test = TestFunction(W)
-    (v, q0, q1, q2) = split(test)
-    q = [q0, q1, q2]
+    q = split(test)  # q[0] = v, q[1],q[2],... = q_0,q_1,...
+
     trial = TrialFunction(W)
-    (u_, p0_, p1_, p2_) = split(trial)
-    p_ = [p0_, p1_, p2_]
+    p_ = split(trial)  # p_[0] = u_, p_[1],p_[2],... = p_0,p_1,...
+
     up_n = Function(W)
-    (u_n, p0_n, p1_n, p2_n) = split(up_n)
-    p_n = [p0_n, p1_n, p2_n]
+    p_n = split(up_n)  # p_n[0] = u_n, p_n[1],p_n[2],... = p0_n,p1_n,...
 
     bcu = DirichletBC(W.sub(0).sub(0), Constant(0.0), "on_boundary")
     bcv = DirichletBC(W.sub(0).sub(1), Constant(0.0), "on_boundary")
@@ -50,10 +49,13 @@ def biotMPET_improved(
 
     # variational formulation
 
-    sources = []
-    innerProdP = []
-    timeD_ = []  # new step
-    timeD_n = []  # previous step
+    sources = []  # Contains the source term for each network
+    innerProdP = (
+        []
+    )  # Contains the inner product of the gradient of p_j for each network
+    dotProdP = []  # Contains the dot product of alpha_j & p_j,
+    timeD_ = []  # Time derivative for the current step
+    timeD_n = []  # Time derivative for the previous step
 
     def a_u(u, v):
         return 2 * my * inner(epsilon(u), epsilon(v)) * dx
@@ -75,39 +77,45 @@ def biotMPET_improved(
 
         bcp = DirichletBC(W.sub(i + 2), Constant(0.0), "on_boundary")
         bcs.append(bcp)
-
-        sources.append(F(g[i], q[i + 1]))
-        innerProdP.append(a_p(K[i], p_[i + 1], q[i + 1]))
+        dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1]))
+        sources.append(F(g[i], q[i + 2]))
+        innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2]))
         if typeS:  # implicit euler
             timeD_.append(
                 (
-                    (1 / dt) * cj[i] * p_[i + 1]
-                    + alpha[i] / Lambda * sum(a * b for a, b in zip(alpha, p_))
+                    (1 / dt)
+                    * (
+                        cj[i] * p_[i + 2]
+                        + alpha[i] / Lambda * sum(a * b for a, b in zip(alpha, p_[1:]))
+                    )
                 )
-                * q[i + 1]
+                * q[i + 2]
                 * dx
             )
             timeD_n.append(
                 (
-                    (1 / dt) * cj[i] * p_n[i + 1]
-                    + alpha[i] / Lambda * sum(a * b for a, b in zip(alpha, p_n))
+                    (1 / dt)
+                    * (
+                        cj[i] * p_n[i + 2]
+                        + alpha[i] / Lambda * sum(a * b for a, b in zip(alpha, p_n[1:]))
+                    )
                 )
-                * q[i + 1]
+                * q[i + 2]
                 * dx
             )
 
+    dotProdP.append(c(alpha[0], p_[1], q[1]))
+
     lhs = (
-        a_u(u_, v)
-        + b(p0_, v)
-        - b(q0, u_)
-        - c(alpha[0], p0_, q0)
-        - c(alpha[1], p1_, q0)
-        - c(alpha[2], p2_, q0)
+        a_u(p_[0], q[0])
+        + b(p_[1], q[0])
+        + b(q[1], p_[0])
+        - sum(dotProdP)
         + sum(innerProdP)
         + sum(timeD_)
     )
 
-    rhs = F(f, v) + sum(sources) + sum(timeD_n)
+    rhs = F(f, q[0]) + sum(sources) + sum(timeD_n)
 
     A = assemble(lhs)
     [bc.apply(A) for bc in bcs]
@@ -131,13 +139,13 @@ def biotMPET_improved(
             vtkP << (up.sub(1), t)
         up_n.assign(up)
         progress += 1
+    res = []
+    res = split(up)
 
-    u, p0, p1, p2 = split(up)
-
-    u = project(u, W.sub(0).collapse())
-    p0 = project(p0, W.sub(1).collapse())
-    p1 = project(p1, W.sub(1).collapse())
-    p2 = project(p2, W.sub(1).collapse())
+    u = project(res[0], W.sub(0).collapse())
+    p0 = project(res[1], W.sub(1).collapse())
+    p1 = project(res[2], W.sub(1).collapse())
+    p2 = project(res[3], W.sub(1).collapse())
 
     return u, p0, p1, p2
 
