@@ -8,7 +8,7 @@ def test_SteadyBiot():
 
     import sympy as sym
 
-    x, y = sym.symbols("x[0], x[1]")  # needed by UFL
+    x, y = sym.symbols("x[0], x[1]")
     my = 1 / 3
     Lambda = 16666
     alpha = 1.0
