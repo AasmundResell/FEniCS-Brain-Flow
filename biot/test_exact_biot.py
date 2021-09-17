@@ -1,4 +1,4 @@
-from biot import biotMPET_improved
+from biot import *
 from fenics import *
 from mshr import *
 from matplotlib.pyplot import show
