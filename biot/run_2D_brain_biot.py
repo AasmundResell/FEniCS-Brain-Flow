@@ -30,42 +30,23 @@ if __name__ == "__main__":
     bx2 = BoundaryChannel()
     bx2.mark(boundary_markers,2)
     ds = Measure('ds', domain=mesh, subdomain_data=boundary_markers)
-
     
     for x in mesh.coordinates():
         if bx0.inside(x, True): print('%s is on x = 0' % x)
         if bx1.inside(x, True): print('%s is on x = 1' % x)
         if bx2.inside(x, True): print('%s is on x = 2' % x)
     
-    x, y = sym.symbols("x[0], x[1]")  # needed by UFL
     my = 1 / 3
     Lambda = 16666
     alpha = 1.0
     c = 1.0
     K = 1.0
     t = sym.symbols("t")
-    u = t * (
-        sym.sin(2 * sym.pi * y) * (-1 + sym.cos(2 * sym.pi * x))
-        + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
-    )
-    v = t * (
-        sym.sin(2 * sym.pi * x) * (1 - sym.cos(2 * sym.pi * y))
-        + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
-    )
-    p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
-    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * (p1)
-    epsilonxx = sym.diff(u, x, 1)
-    epsilonyy = sym.diff(v, y, 1)
-    epsilonxy = 1 / 2 * (sym.diff(u, y, 1) + sym.diff(v, x, 1))
     fx = 0 #force term x-direction
     fy = 0 #force term y-direction
-    g1 = c * sym.diff(p1, t, 1) #source term 
+    g1 = c * sym.sin(t) #source term 
 
     variables = [
-        u,
-        v,
-        p0,
-        p1,
         my,
         Lambda,
         alpha,
@@ -81,10 +62,6 @@ if __name__ == "__main__":
     UFLvariables = [Expression(var, degree=2, t=0) for var in variables]
 
     (
-        u,
-        v,
-        p0,
-        p1,
         my,
         Lambda,
         alpha,
@@ -108,20 +85,10 @@ if __name__ == "__main__":
     )
 
     # Post processing
-    u_e = Expression((variables[0], variables[1]), degree=2, t=T)
-    p1_e = Expression(variables[3], degree=2, t=T)
-    V_e = VectorFunctionSpace(mesh, "P", 2)
-    Q_e = FunctionSpace(mesh, "P", 1)
-    u_e = project(u_e, V_e)
-    p1_e = project(p1_e, Q_e)
-    vtkUEfile = File("solution_brain_2D/u_e.pvd")
-    vtkPEfile = File("solution_brain_2D/p1_e.pvd")
-    vtkUEfile << u_e
-    vtkPEfile << p1_e
-    er2U = errornorm(u_e, u, "L2")
-    print("Error L2 for velocity = ", er2U)
-    er2P = errornorm(p1_e, p[1], "L2")
-    print("Error L2 for pressure = ", er2P)
+    vtkUEfile = File("solution_brain_2D/u.pvd")
+    vtkPEfile = File("solution_brain_2D/p_1.pvd")
+    vtkUEfile << u
+    vtkPEfile << p[1]
     
     plot(u)
     

@@ -60,7 +60,7 @@ def biotMPET_improved(
         return my * (inner(grad(u), grad(v)) + inner(grad(u), nabla_grad(v))) * dx
 
     def a_p(K, p, q):
-        return K * inner(grad(p), grad(q)) * dx
+        return K * dot(grad(p), grad(q)) * dx
 
     def b(s, v):
         return s * div(v) * dx
@@ -72,13 +72,14 @@ def biotMPET_improved(
         return dot(f, v) * dx
 
     for i in range(numPnetworks):  # apply for each network
-        print(i)
-
+        #Applying boundary terms
         bcp = DirichletBC(W.sub(i + 2), Constant(0.0), "on_boundary")
         bcs.append(bcp)
-        dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1]))
-        sources.append(F(g[i], q[i + 2]))
-        innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2]))
+
+        dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1])) #Applying time derivative
+        sources.append(F(g[i], q[i + 2]))                 #Applying source term
+        innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2])) #Applying diffusive term
+
         if typeS:  # implicit euler
             timeD_.append(
                 (

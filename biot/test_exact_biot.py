@@ -83,7 +83,7 @@ def test_SteadyBiot():
     alpha = [1, alpha, alpha]
     c = [c, c]
     K = [K, K]
-    u, p0, p1, p2 = biotMPET_improved(
+    u, p = biotMPET_improved(
         mesh, 0, 0, 2, f, g, alpha, K, c, my, Lambda, False
     )
 
@@ -97,16 +97,16 @@ def test_SteadyBiot():
     vtkUfile = File("solution_steady/u.pvd")
     vtkPfile = File("solution_steady/p1.pvd")
     vtkUfile << u
-    vtkPfile << p1
+    vtkPfile << p[1]
     vtkUEfile = File("solution_steady/u_e.pvd")
     vtkPEfile = File("solution_steady/p_e1.pvd")
     vtkUEfile << u_e
     vtkPEfile << p_e1
     er2U = errornorm(u_e, u, "L2")
     print("Error L2 for velocity = ", er2U)
-    er2P = errornorm(p_e1, p1, "L2")
+    er2P = errornorm(p_e1, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
-    plot(p1)
+    plot(p[1])
 
     show()
 
@@ -238,5 +238,6 @@ def test_TransientBiot():
 
     show()
 
-
-test_TransientBiot()
+if __name__ == "__main__":
+    test_TransientBiot()
+    test_SteadyBiot()
