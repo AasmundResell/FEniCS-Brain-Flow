@@ -3,7 +3,7 @@ from mshr import *
 
 
 def biotMPET_improved(
-    mesh, T, numTsteps, numPnetworks, f, g, alpha, K, cj, my, Lambda, typeS=False
+        mesh, T, numTsteps, numPnetworks, f, g, alpha, K, cj, my, Lambda, typeS=False
 ):
     if not typeS:
         dt = 0
@@ -57,7 +57,7 @@ def biotMPET_improved(
     timeD_n = []  # Time derivative for the previous step
 
     def a_u(u, v):
-        return 2 * my * inner(epsilon(u), epsilon(v)) * dx
+        return my * (inner(grad(u), grad(v)) + inner(grad(u), nabla_grad(v))) * dx
 
     def a_p(K, p, q):
         return K * inner(grad(p), grad(q)) * dx
@@ -127,8 +127,8 @@ def biotMPET_improved(
         t += dt
         f[0].t = t
         f[1].t = t
-        g[0].t = t
-        g[1].t = t
+        for g_i in g: g_i.t = t
+
         b = assemble(rhs)
         [bc.apply(b) for bc in bcs]
         solve(A, up.vector(), b)
@@ -140,13 +140,12 @@ def biotMPET_improved(
         progress += 1
     res = []
     res = split(up)
-
     u = project(res[0], W.sub(0).collapse())
-    p0 = project(res[1], W.sub(1).collapse())
-    p1 = project(res[2], W.sub(1).collapse())
-    p2 = project(res[3], W.sub(1).collapse())
+    p = []
+    for i in range(1,numPnetworks+2):
+        p.append(project(res[i], W.sub(1).collapse()))
 
-    return u, p0, p1, p2
+    return u, p
 
 
 def epsilon(u):

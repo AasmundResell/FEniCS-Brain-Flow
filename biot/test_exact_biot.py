@@ -1,4 +1,4 @@
-from biot import *
+from biot import biotMPET_improved
 from fenics import *
 from mshr import *
 from matplotlib.pyplot import show
@@ -214,7 +214,7 @@ def test_TransientBiot():
     K = [K, K]
     T = 0.5
     numTsteps = 40
-    u, p0, p1, p2 = biotMPET_improved(
+    u, p = biotMPET_improved(
         mesh, T, numTsteps, 2, f, g, alpha, K, cj, my, Lambda, True
     )
 
@@ -231,7 +231,7 @@ def test_TransientBiot():
     vtkPEfile << p1_e
     er2U = errornorm(u_e, u, "L2")
     print("Error L2 for velocity = ", er2U)
-    er2P = errornorm(p1_e, p1, "L2")
+    er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
 
     plot(u)
