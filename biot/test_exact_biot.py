@@ -3,9 +3,12 @@ from fenics import *
 from mshr import *
 from matplotlib.pyplot import show
 
+class BoundaryOuter(SubDomain):
+    def inside(self, x, on_boundary):
+        return on_boundary
 
 def test_SteadyBiot():
-
+    
     import sympy as sym
 
     x, y = sym.symbols("x[0], x[1]")
@@ -76,15 +79,23 @@ def test_SteadyBiot():
     ) = UFLvariables
     f = as_vector((fx, fy))
     mesh = UnitSquareMesh(10, 10)
+    # Define boundary
+    boundary_markers = MeshFunction("size_t", mesh, 1)
+    boundary_markers.set_all(9999)
 
-    # exact solution, need to make copies from c-strings
-    # instead of assinging directly from UFLvariables?
+    bx0 = BoundaryOuter()
+    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+
+    # Define boundary conditions
+    boundary_conditions = {
+        0: {"Dirichlet": Constant(0.0)}}
+    
     g = [g1, g2]
     alpha = [1, alpha, alpha]
     c = [c, c]
     K = [K, K]
     u, p = biotMPET_improved(
-        mesh, 0, 0, 2, f, g, alpha, K, c, my, Lambda, False
+        mesh, 0, 0, 2, f, g, alpha, K, c, my, Lambda, boundary_conditions, boundary_markers, False
     )
 
     # Post processing
@@ -164,8 +175,7 @@ def test_TransientBiot():
         )
         - K * (sym.diff(p2, x, 2) + sym.diff(p2, y, 2))
     )  # calculate source term 1
-    print(g1)
-    print(g2)
+    
     variables = [
         u,
         v,
@@ -206,8 +216,17 @@ def test_TransientBiot():
     f = as_vector((fx, fy))
     mesh = UnitSquareMesh(15, 15)
 
-    # exact solution, need to make copies from c-strings
-    # instead of assinging directly from UFLvariables?
+    # Define boundary
+    boundary_markers = MeshFunction("size_t", mesh, 1)
+    boundary_markers.set_all(9999)
+
+    bx0 = BoundaryOuter()
+    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+
+    # Define boundary conditions
+    boundary_conditions = {
+        0: {"Dirichlet": Constant(0.0)}}
+    
     g = [g1, g2]
     alpha = [1, alpha, alpha]
     cj = [c, c]
@@ -215,7 +234,7 @@ def test_TransientBiot():
     T = 0.5
     numTsteps = 40
     u, p = biotMPET_improved(
-        mesh, T, numTsteps, 2, f, g, alpha, K, cj, my, Lambda, True
+        mesh, T, numTsteps, 2, f, g, alpha, K, cj, my, Lambda, boundary_conditions,boundary_markers,True
     )
 
     # Post processing
