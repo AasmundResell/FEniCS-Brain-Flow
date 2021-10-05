@@ -1,10 +1,29 @@
 from fenics import *
 from mshr import *
+import ufl
 
 
 def biotMPET_improved(
-        mesh, T, numTsteps, numPnetworks, f, g, alpha, K, cj, my, Lambda, typeS=False
+    mesh,
+    T,
+    numTsteps,
+    numPnetworks,
+    f,
+    g,
+    alpha,
+    K,
+    cj,
+    my,
+    Lambda,
+    boundary_conditionsU,
+    boundary_markersU,
+    #    boundary_conditionsP,
+    #    boundary_markersP,
+    typeS=False,
 ):
+    dsU = Measure("ds", domain=mesh, subdomain_data=boundary_markersU)
+    # dsP = Measure("ds", domain=mesh, subdomain_data=boundary_markersP)
+
     if not typeS:
         dt = 0
         numTsteps = 1
@@ -40,14 +59,7 @@ def biotMPET_improved(
     up_n = Function(W)
     p_n = split(up_n)  # p_n[0] = u_n, p_n[1],p_n[2],... = p0_n,p1_n,...
 
-    bcu = DirichletBC(W.sub(0).sub(0), Constant(0.0), "on_boundary")
-    bcv = DirichletBC(W.sub(0).sub(1), Constant(0.0), "on_boundary")
-    bcp0 = DirichletBC(W.sub(1), Constant(0.0), "on_boundary")
-
-    bcs = [bcu, bcv, bcp0]
-
     # variational formulation
-
     sources = []  # Contains the source term for each network
     innerProdP = (
         []
@@ -55,6 +67,9 @@ def biotMPET_improved(
     dotProdP = []  # Contains the dot product of alpha_j & p_j,
     timeD_ = []  # Time derivative for the current step
     timeD_n = []  # Time derivative for the previous step
+    bcs_D = []  # Contains the terms for the Dirichlet boundaries
+    integrals_N = []  # Contains the integrals for the Neumann boundaries
+    time_expr = []  # Terms that needs to be updated at each timestep
 
     def a_u(u, v):
         return my * (inner(grad(u), grad(v)) + inner(grad(u), nabla_grad(v))) * dx
@@ -72,13 +87,14 @@ def biotMPET_improved(
         return dot(f, v) * dx
 
     for i in range(numPnetworks):  # apply for each network
-        #Applying boundary terms
+        # Applying boundary terms
         bcp = DirichletBC(W.sub(i + 2), Constant(0.0), "on_boundary")
-        bcs.append(bcp)
+        bcs_D.append(bcp)
 
-        dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1])) #Applying time derivative
-        sources.append(F(g[i], q[i + 2]))                 #Applying source term
-        innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2])) #Applying diffusive term
+        dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1]))  # Applying time derivative
+        sources.append(F(g[i], q[i + 2]))  # Applying source term
+        innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2]))  # Applying diffusive term
+        time_expr.append(g[i])
 
         if typeS:  # implicit euler
             timeD_.append(
@@ -106,6 +122,36 @@ def biotMPET_improved(
 
     dotProdP.append(c(alpha[0], p_[1], q[1]))
 
+    # Defining boundary conditions for displacements
+    for i in boundary_conditionsU:
+        if "Dirichlet" in boundary_conditionsU[i]:
+            print("Applying Dirichlet BC.")
+            bcs_D.append(
+                DirichletBC(
+                    W.sub(0).sub(0),
+                    boundary_conditionsU[i]["Dirichlet"],
+                    boundary_markersU,
+                    i,
+                )
+            )
+            bcs_D.append(
+                DirichletBC(
+                    W.sub(0).sub(1),
+                    boundary_conditionsU[i]["Dirichlet"],
+                    boundary_markersU,
+                    i,
+                )
+            )
+        elif "Neumann" in boundary_conditionsU[i]:
+            if boundary_conditionsU[i]["Neumann"] != 0:
+                print("Applying Neumann BC.")
+                N = boundary_conditionsU[i]["Neumann"]
+                integrals_N.append(inner(N, q[0]) * ds(i))
+                time_expr.append(N)
+    bcp0 = DirichletBC(W.sub(1), Constant(0.0), "on_boundary")
+
+    bcs_D.append(bcp0)
+
     lhs = (
         a_u(p_[0], q[0])
         + b(p_[1], q[0])
@@ -115,23 +161,31 @@ def biotMPET_improved(
         + sum(timeD_)
     )
 
-    rhs = F(f, q[0]) + sum(sources) + sum(timeD_n)
-
+    rhs = F(f, q[0]) + sum(sources) + sum(timeD_n) + sum(integrals_N)
+    time_expr.append(f[0])
+    time_expr.append(f[1])
     A = assemble(lhs)
-    [bc.apply(A) for bc in bcs]
+    [bc.apply(A) for bc in bcs_D]
 
     up = Function(W)
 
     t = 0
-    print(dt)
+
     for i in range(numTsteps):
         t += dt
-        f[0].t = t
-        f[1].t = t
-        for g_i in g: g_i.t = t
+        for expr in time_expr:  # Update all time dependent terms
+            if isinstance(expr, ufl.tensors.ComponentTensor):
+                for dimexpr in expr.ufl_operands:
+                    for op in dimexpr.ufl_operands:
+                        try:
+                            op.t = t
+                        except:
+                            pass
+            else:
+                update_operator(expr, t)
 
         b = assemble(rhs)
-        [bc.apply(b) for bc in bcs]
+        [bc.apply(b) for bc in bcs_D]
         solve(A, up.vector(), b)
 
         if typeS:
@@ -143,11 +197,16 @@ def biotMPET_improved(
     res = split(up)
     u = project(res[0], W.sub(0).collapse())
     p = []
-    for i in range(1,numPnetworks+2):
+
+    for i in range(1, numPnetworks + 2):
         p.append(project(res[i], W.sub(1).collapse()))
 
     return u, p
 
 
-def epsilon(u):
-    return 0.5 * (nabla_grad(u) + nabla_grad(u).T)
+def update_operator(expr, time):
+    if isinstance(expr, ufl.algebra.Operator):
+        for op in expr.ufl_operands:
+            update_operator(op, time)
+    elif isinstance(expr, ufl.Coefficient):
+        expr.t = time
