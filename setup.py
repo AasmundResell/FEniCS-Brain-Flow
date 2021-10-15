@@ -1,7 +1,7 @@
 from distutils.core import setup
 from setuptools import Extension,find_packages
 
-setup(name='FEniCS_brainSolver',
+setup(name='FEniCS_brainSolver_meshes',
       version='1.0',
       author='Åsmund',  
       author_email='aasmunar@stud.ntnu.no',

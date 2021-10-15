@@ -3,7 +3,7 @@ from mshr import *
 import ufl
 
 
-def biotMPET_improved(
+def biotMPET(
     mesh,
     T,
     numTsteps,
@@ -16,19 +16,18 @@ def biotMPET_improved(
     my,
     Lambda,
     boundary_conditionsU,
-    boundary_markersU,
-    #    boundary_conditionsP,
-    #    boundary_markersP,
-    typeS=False,
+    boundary_conditionsP,
+    boundary_markers,
+    boundaryNum = 0,
+    transient=False,
 ):
-    dsU = Measure("ds", domain=mesh, subdomain_data=boundary_markersU)
-    # dsP = Measure("ds", domain=mesh, subdomain_data=boundary_markersP)
-
-    if not typeS:
+    ds = Measure("ds", domain=mesh, subdomain_data=boundary_markers)
+    
+    if not transient:
         dt = 0
         numTsteps = 1
         progress = 0
-    elif typeS:  # Will need to be saved during calculation
+    elif transient:  # Will need to be saved during calculation
         dt = T / numTsteps
         print(dt)
         vtkU = File("solution_transient/u.pvd")
@@ -38,13 +37,13 @@ def biotMPET_improved(
         set_log_level(LogLevel.PROGRESS)
 
     # Generate function space
-    V = VectorElement("P", triangle, 2)  # Displacement
-    Q_0 = FiniteElement("P", triangle, 1)  # Total pressure
+    V = VectorElement("CG", triangle, 2)  # Displacement
+    Q_0 = FiniteElement("CG", triangle, 1)  # Total pressure
     mixedElement = []
     mixedElement.append(V)
     mixedElement.append(Q_0)
     for i in range(numPnetworks):
-        Q = FiniteElement("P", triangle, 1)
+        Q = FiniteElement("CG", triangle, 1)
         mixedElement.append(Q)
 
     W_element = MixedElement(mixedElement)
@@ -86,17 +85,28 @@ def biotMPET_improved(
     def F(f, v):
         return dot(f, v) * dx
 
+    
     for i in range(numPnetworks):  # apply for each network
-        # Applying boundary terms
-        bcp = DirichletBC(W.sub(i + 2), Constant(0.0), "on_boundary")
-        bcs_D.append(bcp)
-
+        for j in range(boundaryNum + 1): #for each boundary 
+            
+            if "Dirichlet" in boundary_conditionsP[(i + 1,j)]:
+                print("Applying Dirichlet BC for pressure network: %i and boundary surface %i " %(i+1,j))
+                expr = boundary_conditionsP[(i + 1,j)]["Dirichlet"]
+                bcp = DirichletBC(
+                    W.sub(i + 2),
+                    expr,
+                    boundary_markers,
+                    j,
+                )
+                bcs_D.append(bcp)
+                time_expr.append(expr)
+                
         dotProdP.append(c(alpha[i + 1], p_[i + 2], q[1]))  # Applying time derivative
         sources.append(F(g[i], q[i + 2]))  # Applying source term
         innerProdP.append(a_p(K[i], p_[i + 2], q[i + 2]))  # Applying diffusive term
         time_expr.append(g[i])
 
-        if typeS:  # implicit euler
+        if transient:  # implicit euler
             timeD_.append(
                 (
                     (1 / dt)
@@ -126,31 +136,34 @@ def biotMPET_improved(
     for i in boundary_conditionsU:
         if "Dirichlet" in boundary_conditionsU[i]:
             print("Applying Dirichlet BC.")
+            exprU = boundary_conditionsU[i]["Dirichlet"][0]
+            exprV = boundary_conditionsU[i]["Dirichlet"][1]
             bcs_D.append(
                 DirichletBC(
                     W.sub(0).sub(0),
-                    boundary_conditionsU[i]["Dirichlet"],
-                    boundary_markersU,
+                    exprU,
+                    boundary_markers,
                     i,
                 )
             )
             bcs_D.append(
                 DirichletBC(
                     W.sub(0).sub(1),
-                    boundary_conditionsU[i]["Dirichlet"],
-                    boundary_markersU,
+                    exprV,
+                    boundary_markers,
                     i,
                 )
             )
+            time_expr.append(exprU)
+            time_expr.append(exprV)
+            
+               
         elif "Neumann" in boundary_conditionsU[i]:
             if boundary_conditionsU[i]["Neumann"] != 0:
                 print("Applying Neumann BC.")
                 N = boundary_conditionsU[i]["Neumann"]
                 integrals_N.append(inner(N, q[0]) * ds(i))
                 time_expr.append(N)
-    bcp0 = DirichletBC(W.sub(1), Constant(0.0), "on_boundary")
-
-    bcs_D.append(bcp0)
 
     lhs = (
         a_u(p_[0], q[0])
@@ -170,25 +183,19 @@ def biotMPET_improved(
     up = Function(W)
 
     t = 0
-
     for i in range(numTsteps):
         t += dt
         for expr in time_expr:  # Update all time dependent terms
-            if isinstance(expr, ufl.tensors.ComponentTensor):
-                for dimexpr in expr.ufl_operands:
-                    for op in dimexpr.ufl_operands:
-                        try:
-                            op.t = t
-                        except:
-                            pass
-            else:
-                update_operator(expr, t)
+            update_t(expr, t)
 
         b = assemble(rhs)
-        [bc.apply(b) for bc in bcs_D]
+        for bc in bcs_D:
+#            update_t(bc, t)
+            bc.apply(b)
+        
         solve(A, up.vector(), b)
 
-        if typeS:
+        if transient:
             vtkU << (up.sub(0), t)
             vtkP << (up.sub(1), t)
         up_n.assign(up)
@@ -204,9 +211,24 @@ def biotMPET_improved(
     return u, p
 
 
-def update_operator(expr, time):
+def update_t(expr, t):
+    if isinstance(expr, ufl.tensors.ComponentTensor):
+        for dimexpr in expr.ufl_operands:
+            for op in dimexpr.ufl_operands:
+                try:
+                    op.t = t
+                except:
+                    print("passing for: ", expr)
+                    pass
+                
+
+    else:
+        operand_update(expr, t)
+
+
+def operand_update(expr, t):
     if isinstance(expr, ufl.algebra.Operator):
         for op in expr.ufl_operands:
-            update_operator(op, time)
+            update_operator(expr.ufl_operands, t)
     elif isinstance(expr, ufl.Coefficient):
-        expr.t = time
+        expr.t = t

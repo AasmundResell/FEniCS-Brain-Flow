@@ -3,10 +3,10 @@ from dolfin import *
 from matplotlib.pyplot import show
 
 
-def generate_2D_brain_mesh():
+def generate_2D_brain_mesh(n=8):
+
 
     # Get as much output as possible by setting debug type log level.
-
     origin = Point(0.0, 0.0)
 
     channelCoord1 = Point(-0.05, 0.0)
@@ -20,14 +20,12 @@ def generate_2D_brain_mesh():
     aqueduct = Rectangle(channelCoord1, channelCoord2)
 
     geometry = parenchyma - ventricles - aqueduct
-
-    # Create mesh, N controls the resolution (N higher -> more cells)
-    N = 15
-    mesh = generate_mesh(geometry, N)
+    
+    mesh = generate_mesh(geometry, n)
     return mesh
 
 
 if __name__ == "__main__":
-    mesh = generate_2D_brain_mesh()
+    mesh = generate_2D_brain_mesh(8)
     plot(mesh, title="mesh")
     show()

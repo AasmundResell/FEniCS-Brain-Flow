@@ -1,7 +1,8 @@
-from biot import biotMPET_improved
+from biot import biotMPET
 from meshes.brain_mesh_2D import generate_2D_brain_mesh
-from fenics import *
 from matplotlib.pyplot import show
+from ufl import FacetNormal,as_vector
+from dolfin import SubDomain,MeshFunction,near,Expression,Constant,File,plot
 import sympy as sym
 
 if __name__ == "__main__":
@@ -10,7 +11,7 @@ if __name__ == "__main__":
     class BoundaryOuter(SubDomain):
         def inside(self, x, on_boundary):
             return on_boundary
-1
+
     class BoundaryInner(SubDomain):
         def inside(self, x, on_boundary):
             return on_boundary and (x[0] ** 2 + x[1] ** 2) ** (1 / 2) <= 0.2
@@ -33,6 +34,7 @@ if __name__ == "__main__":
     bx2 = BoundaryChannel()
     bx2.mark(boundary_markers, 2)  # Overwrites the channel ventricles boundary
 
+    
     for x in mesh.coordinates():
         if bx0.inside(x, True):
             print("%s is on x = 0" % x)
@@ -65,6 +67,7 @@ if __name__ == "__main__":
         fy,
         g1,
         pSkull,
+        pVentricles,
         neumannBC,
     ]
 
@@ -84,6 +87,7 @@ if __name__ == "__main__":
         fy,
         g1,
         pSkull,
+        pVentricles,
         neumannBC,
     ) = UFLvariables
     f = as_vector((fx, fy))
@@ -96,13 +100,19 @@ if __name__ == "__main__":
     numTsteps = 80
 
     # Define boundary conditions
-    boundary_conditions = {
+    boundary_conditionsU = {
         0: {"Dirichlet": Constant(0.0)},
         1: {"Neumann": n * neumannBC},
         2: {"Neumann": n * neumannBC},
     }
-
-    u, p = biotMPET_improved(
+    
+    # Define boundary conditions
+    boundary_conditionsP = {
+        0: {"Dirichlet": pSkull},
+        1: {"Dirichlet": pVentricles},
+        2: {"Dirichlet": pVentricles},
+    }
+    u, p = biotMPET(
         mesh,
         T,
         numTsteps,
@@ -114,9 +124,11 @@ if __name__ == "__main__":
         cj,
         my,
         Lambda,
-        boundary_conditions,
+        boundary_conditionsU,
         boundary_markers,
         True,
+       # boundary_conditionsP,
+        #boundary_markers
     )
 
     # Post processing
