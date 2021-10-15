@@ -1,16 +1,16 @@
 from biot import biotMPET
+from meshes.brain_mesh_2D import generate_2D_brain_mesh
+from matplotlib.pyplot import show
 from fenics import *
 from mshr import *
-from matplotlib.pyplot import show
-from math import log
+from test_exact_biot import convergenceRate
 
-class BoundaryOuter(SubDomain):
+class Boundary(SubDomain):
     def inside(self, x, on_boundary):
         return on_boundary
 
 
-def test_SteadyBiot():
-
+def exact_2D_brain_biot_test_steady():
     import sympy as sym
 
     x, y = sym.symbols("x[0], x[1]")
@@ -19,6 +19,7 @@ def test_SteadyBiot():
     alpha = 1.0
     c = 1.0
     K = 1.0
+    #t = sym.symbols("t")
     t = 1.0
     u = t * (
         sym.sin(2 * sym.pi * y) * (-1 + sym.cos(2 * sym.pi * x))
@@ -29,8 +30,7 @@ def test_SteadyBiot():
         + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
     )
     p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
-    p2 = -t * 2 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network2
-    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * (p1 + p2)
+    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * p1
     epsilonxx = sym.diff(u, x, 1)
     epsilonyy = sym.diff(v, y, 1)
     epsilonxy = 1 / 2 * (sym.diff(u, y, 1) + sym.diff(v, x, 1))
@@ -40,14 +40,19 @@ def test_SteadyBiot():
     fy = -2 * my * (sym.diff(epsilonxy, x, 1) + sym.diff(epsilonyy, y, 1)) - sym.diff(
         p0, y, 1
     )  # calculate force term y
-    g1 = -K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))  # calculate source term 1
-    g2 = -K * (sym.diff(p2, x, 2) + sym.diff(p2, y, 2))  # calculate source term 1
+    g1 = (
+        #+c * sym.diff(p1, t, 1)
+        #+ alpha / Lambda * (1 * sym.diff(p0, t, 1) + alpha * sym.diff(p1, t, 1))
+        - K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))
+    )
+    # W_1 = -K * sym.diff(p1, x)  # Flow of liquid, described by darcy's law
+    # W_2 = -K * sym.diff(p1, y)  # Flow of liquid, described by darcy's law
+
     variables = [
         u,
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -56,7 +61,8 @@ def test_SteadyBiot():
         fx,
         fy,
         g1,
-        g2,
+        #        W_1,
+        #        W_2,
     ]
 
     variables = [sym.printing.ccode(var) for var in variables]  # Generate C++ code
@@ -68,7 +74,6 @@ def test_SteadyBiot():
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -77,41 +82,47 @@ def test_SteadyBiot():
         fx,
         fy,
         g1,
-        g2,
+        #        W_1,
+        #        W_2,
     ) = UFLvariables
     f = as_vector((fx, fy))
-    mesh = UnitSquareMesh(10, 10)
+    U = as_vector((u, v))
+
+    g = [g1]
+    alpha = [1, alpha]
+    cj = [c]
+    K = [K]
+    #T = 10
+    #numTsteps = 80
+
+    mesh = generate_2D_brain_mesh(15)
+
+    n = FacetNormal(mesh)  # normal vector on the boundary
     # Define boundary
     boundary_markers = MeshFunction("size_t", mesh, 1)
     boundary_markers.set_all(9999)
 
-    bx0 = BoundaryOuter()
+    bx0 = Boundary()
     bx0.mark(boundary_markers, 0)  # Applies for all boundaries
 
-    U = as_vector((u, v))
     # Define boundary conditions
     boundary_conditionsU = {0: {"Dirichlet": U}}
-    # First key denotes the network, the second denotes the boundary marker
+    # Define boundary conditions
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
+        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
+        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
     }
 
-    g = [g1, g2]
-    alpha = [1, alpha, alpha]
-    c = [c, c]
-    K = [K, K]
     u, p = biotMPET(
         mesh,
         0,
         0,
-        2,
+        1,
         f,
         g,
         alpha,
         K,
-        c,
+        cj,
         my,
         Lambda,
         boundary_conditionsU,
@@ -122,31 +133,50 @@ def test_SteadyBiot():
     )
 
     # Post processing
-    u_e = Expression((variables[0], variables[1]), degree=2)
     V_e = VectorFunctionSpace(mesh, "P", 2)
     Q_e = FunctionSpace(mesh, "P", 1)
-    u_e = project(u_e, V_e)
-    p_e1 = project(UFLvariables[3], Q_e)
 
-    vtkUfile = File("solution_steady/u.pvd")
-    vtkPfile = File("solution_steady/p1.pvd")
-    vtkUfile << u
-    vtkPfile << p[1]
-    vtkUEfile = File("solution_steady/u_e.pvd")
-    vtkPEfile = File("solution_steady/p_e1.pvd")
+    u_e = project(Expression((variables[0], variables[1]), degree=2), V_e)
+    p1_e = project(Expression(variables[3], degree=2), Q_e)
+
+    vtkUEfile = File("solution_exact2D_brain/u_e.pvd")
+    vtkPEfile = File("solution_exact2D_brain/p1_e.pvd")
     vtkUEfile << u_e
-    vtkPEfile << p_e1
+    vtkPEfile << p1_e
+
+    vtkUEfile = File("solution_exact2D_brain/u.pvd")
+    vtkPEfile = File("solution_exact2D_brain/p1.pvd")
+    vtkUEfile << u
+    vtkPEfile << p[1]
     er2U = errornorm(u_e, u, "L2")
     print("Error L2 for displacements = ", er2U)
-    er2P = errornorm(p_e1, p[1], "L2")
+    er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
-    plot(p[1])
+
+    plot(u_e, title="u_e")
 
     show()
 
+    plot(u, title="u")
+    show()
 
-def test_TransientBiot():
+    plot(p[1], title="p1")
 
+    show()
+
+    plot(p1_e, title="p1_e")
+
+    show()
+
+    """W = as_vector((W_1, W_2))
+    print(W)
+    W = project(W, V_e)
+
+    plot(W, title="Fluid flow exact")
+    show()
+    """
+
+def exact_2D_brain_biot_test_transient():
     import sympy as sym
 
     x, y = sym.symbols("x[0], x[1]")
@@ -165,8 +195,7 @@ def test_TransientBiot():
         + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
     )
     p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
-    p2 = -t * 2 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network2
-    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * (p1 + p2)
+    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * p1
     epsilonxx = sym.diff(u, x, 1)
     epsilonyy = sym.diff(v, y, 1)
     epsilonxy = 1 / 2 * (sym.diff(u, y, 1) + sym.diff(v, x, 1))
@@ -178,33 +207,15 @@ def test_TransientBiot():
     )  # calculate force term y
     g1 = (
         +c * sym.diff(p1, t, 1)
-        + alpha
-        / Lambda
-        * (
-            1 * sym.diff(p0, t, 1)
-            + alpha * sym.diff(p1, t, 1)
-            + alpha * sym.diff(p2, t, 1)
-        )
+        + alpha / Lambda * (1 * sym.diff(p0, t, 1) + alpha * sym.diff(p1, t, 1))
         - K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))
-    )  # calculate source term 1
-    g2 = (
-        +c * sym.diff(p2, t, 1)
-        + alpha
-        / Lambda
-        * (
-            1 * sym.diff(p0, t, 1)
-            + alpha * sym.diff(p1, t, 1)
-            + alpha * sym.diff(p2, t, 1)
-        )
-        - K * (sym.diff(p2, x, 2) + sym.diff(p2, y, 2))
-    )  # calculate source term 1
+    )
 
     variables = [
         u,
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -213,19 +224,17 @@ def test_TransientBiot():
         fx,
         fy,
         g1,
-        g2,
     ]
 
     variables = [sym.printing.ccode(var) for var in variables]  # Generate C++ code
 
-    UFLvariables = [Expression(var, degree=2, t=0) for var in variables]
+    UFLvariables = [Expression(var, degree=2,t=0) for var in variables]
 
     (
         u,
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -234,38 +243,40 @@ def test_TransientBiot():
         fx,
         fy,
         g1,
-        g2,
     ) = UFLvariables
     f = as_vector((fx, fy))
-    mesh = UnitSquareMesh(15, 15)
+    U = as_vector((u, v))
 
+    g = [g1]
+    alpha = [1, alpha]
+    cj = [c]
+    K = [K]
+    T = 10
+    numTsteps = 80
+
+    mesh = generate_2D_brain_mesh(15)
+
+    n = FacetNormal(mesh)  # normal vector on the boundary
     # Define boundary
     boundary_markers = MeshFunction("size_t", mesh, 1)
     boundary_markers.set_all(9999)
 
-    bx0 = BoundaryOuter()
+    bx0 = Boundary()
     bx0.mark(boundary_markers, 0)  # Applies for all boundaries
 
-    U = as_vector((u, v))
     # Define boundary conditions
     boundary_conditionsU = {0: {"Dirichlet": U}}
-    # First key denotes the network, the second denotes the boundary marker
+    # Define boundary conditions
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
+        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
+        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
     }
-    g = [g1, g2]
-    alpha = [1, alpha, alpha]
-    cj = [c, c]
-    K = [K, K]
-    T = 0.5
-    numTsteps = 40
+
     u, p = biotMPET(
         mesh,
         T,
         numTsteps,
-        2,
+        1,
         f,
         g,
         alpha,
@@ -281,27 +292,42 @@ def test_TransientBiot():
     )
 
     # Post processing
-    u_e = Expression((variables[0], variables[1]), degree=2, t=T)
-    p1_e = Expression(variables[3], degree=2, t=T)
     V_e = VectorFunctionSpace(mesh, "P", 2)
     Q_e = FunctionSpace(mesh, "P", 1)
-    u_e = project(u_e, V_e)
-    p1_e = project(p1_e, Q_e)
-    vtkUEfile = File("solution_transient/u_e.pvd")
-    vtkPEfile = File("solution_transient/p1_e.pvd")
+
+    u_e = project(Expression((variables[0], variables[1]), degree=2,t=T), V_e)
+    p1_e = project(Expression(variables[3], degree=2,t=T), Q_e)
+
+    vtkUEfile = File("solution_exact2D_brain/u_e.pvd")
+    vtkPEfile = File("solution_exact2D_brain/p1_e.pvd")
     vtkUEfile << u_e
     vtkPEfile << p1_e
+
+    vtkUEfile = File("solution_exact2D_brain/u.pvd")
+    vtkPEfile = File("solution_exact2D_brain/p1.pvd")
+    vtkUEfile << u
+    vtkPEfile << p[1]
     er2U = errornorm(u_e, u, "L2")
     print("Error L2 for displacements = ", er2U)
     er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
 
-    plot(u)
+    plot(u_e, title="u_e")
 
     show()
 
-def test_meshRefineBiot():
+    plot(u, title="u")
+    show()
 
+    plot(p[1], title="p1")
+
+    show()
+
+    plot(p1_e, title="p1_e")
+
+    show()
+
+def test_2Dbrain_Biot_Convergence():
     import sympy as sym
 
     x, y = sym.symbols("x[0], x[1]")
@@ -320,8 +346,7 @@ def test_meshRefineBiot():
         + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
     )
     p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
-    p2 = -t * 2 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network2
-    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * (p1 + p2)
+    p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * p1
     epsilonxx = sym.diff(u, x, 1)
     epsilonyy = sym.diff(v, y, 1)
     epsilonxy = 1 / 2 * (sym.diff(u, y, 1) + sym.diff(v, x, 1))
@@ -333,33 +358,15 @@ def test_meshRefineBiot():
     )  # calculate force term y
     g1 = (
         +c * sym.diff(p1, t, 1)
-        + alpha
-        / Lambda
-        * (
-            1 * sym.diff(p0, t, 1)
-            + alpha * sym.diff(p1, t, 1)
-            + alpha * sym.diff(p2, t, 1)
-        )
+        + alpha / Lambda * (1 * sym.diff(p0, t, 1) + alpha * sym.diff(p1, t, 1))
         - K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))
-    )  # calculate source term 1
-    g2 = (
-        +c * sym.diff(p2, t, 1)
-        + alpha
-        / Lambda
-        * (
-            1 * sym.diff(p0, t, 1)
-            + alpha * sym.diff(p1, t, 1)
-            + alpha * sym.diff(p2, t, 1)
-        )
-        - K * (sym.diff(p2, x, 2) + sym.diff(p2, y, 2))
-    )  # calculate source term 1
+    )
 
     variables = [
         u,
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -368,19 +375,17 @@ def test_meshRefineBiot():
         fx,
         fy,
         g1,
-        g2,
     ]
 
     variables = [sym.printing.ccode(var) for var in variables]  # Generate C++ code
 
-    UFLvariables = [Expression(var, degree=2, t=0) for var in variables]
+    UFLvariables = [Expression(var, degree=2,t=0) for var in variables]
 
     (
         u,
         v,
         p0,
         p1,
-        p2,
         my,
         Lambda,
         alpha,
@@ -389,42 +394,43 @@ def test_meshRefineBiot():
         fx,
         fy,
         g1,
-        g2,
     ) = UFLvariables
     f = as_vector((fx, fy))
     U = as_vector((u, v))
 
-    # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
-    # First key denotes the network, the second denotes the boundary marker
-    boundary_conditionsP = {
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
-    }
-    
-    g = [g1, g2]
-    alpha = [1, alpha, alpha]
-    cj = [c, c]
-    K = [K, K]
+    g = [g1]
+    alpha = [1, alpha]
+    cj = [c]
+    K = [K]
     T = 0.5
     numTsteps = 4
 
+    # Define boundary conditions
+    boundary_conditionsU = {0: {"Dirichlet": U}}
+    # Define boundary conditions
+    boundary_conditionsP = {
+        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
+        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
+    }
+    
+    mesh = generate_2D_brain_mesh(5)
 
-    mesh = UnitSquareMesh(4, 4)
     erroruL2 = []
     errorpL2 = []
     erroruH1 = []
     errorpH1 = []
     h = []
-    for n in range(5):
+    
+    for n in range(4):
         
         plot(mesh)
         show()
+
         # Define boundary
         boundary_markers = MeshFunction("size_t", mesh, 1)
         boundary_markers.set_all(9999)
 
-        bx0 = BoundaryOuter()
+        bx0 = Boundary()
         bx0.mark(boundary_markers, 0)  # Applies for all boundaries
         
     
@@ -432,7 +438,7 @@ def test_meshRefineBiot():
             mesh,
             T,
             numTsteps,
-            2,
+            1,
             f,
             g,
             alpha,
@@ -470,17 +476,14 @@ def test_meshRefineBiot():
         errorpH1.append(er1P)
     
         mesh = refine(mesh)
-
-    print("h = ",h)
+    print(h) 
     print("Convergence rate for displacement using L2: ",convergenceRate(erroruL2, h))
     print("Convergence rate for pressure 1 using L2: ",convergenceRate(errorpL2, h))
     print("Convergence rate for displacement using H1: ",convergenceRate(erroruH1, h))
     print("Convergence rate for pressure 1 using H1: ",convergenceRate(errorpH1, h))
-    
-def convergenceRate(error,h):
-    rate = [log(error[i+1]/error[i])/log(h[i+1]/h[i]) for i in range(len(error)-1)]
-    return rate
+
+
 if __name__ == "__main__":
-    #test_TransientBiot()
-#    test_SteadyBiot()
-    test_meshRefineBiot()
+    #exact_2D_brain_biot_test_steady()
+    #exact_2D_brain_biot_test_transient()
+    test_2Dbrain_Biot_Convergence()
