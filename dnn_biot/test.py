@@ -63,8 +63,9 @@ hat_loss = ReducedFunctional(loss, net.weights_ctrls())
 
 # Use scipy L - BFGS optimiser
 opt_theta = minimize(
-    hat_loss, options={"disp": True, "gtol": 1e-12, "ftol": 1e-12, "maxiter": 200}
+    hat_loss, options={"disp": True, "gtol": 1e-12, "ftol": 1e-12, "maxiter": 20}
 )
+print(opt_theta)
 net.set_weights(opt_theta)
 
 

@@ -1,8 +1,11 @@
 from biot import biotMPET
 from fenics import *
 from mshr import *
-from matplotlib.pyplot import show
+from matplotlib import pyplot
 from math import log
+#import biot
+#import imp
+#imp.reload(biot)
 
 class BoundaryOuter(SubDomain):
     def inside(self, x, on_boundary):
@@ -86,16 +89,15 @@ def test_SteadyBiot():
     boundary_markers.set_all(9999)
 
     bx0 = BoundaryOuter()
-    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+    bx0.mark(boundary_markers, 1)  # Applies for all boundaries
 
     U = as_vector((u, v))
     # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
+    boundary_conditionsU = {1: {"Dirichlet": U}}
     # First key denotes the network, the second denotes the boundary marker
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
+        (1, 1): {"Dirichlet": p1},
+        (2, 1): {"Dirichlet": p2},
     }
 
     g = [g1, g2]
@@ -108,7 +110,6 @@ def test_SteadyBiot():
         0,
         2,
         f,
-        g,
         alpha,
         K,
         c,
@@ -117,10 +118,11 @@ def test_SteadyBiot():
         boundary_conditionsU,
         boundary_conditionsP,
         boundary_markers,
-        boundaryNum=0,
+        g=g,
+        boundaryNum=1,
         transient=False,
     )
-
+    
     # Post processing
     u_e = Expression((variables[0], variables[1]), degree=2)
     V_e = VectorFunctionSpace(mesh, "P", 2)
@@ -244,21 +246,21 @@ def test_TransientBiot():
     boundary_markers.set_all(9999)
 
     bx0 = BoundaryOuter()
-    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+    bx0.mark(boundary_markers, 1)  # Applies for all boundaries
 
     U = as_vector((u, v))
     # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
+    boundary_conditionsU = {1: {"Dirichlet": U}}
     # First key denotes the network, the second denotes the boundary marker
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
+        (1, 1): {"Dirichlet": p1},
+        (2, 1): {"Dirichlet": p2},
     }
     g = [g1, g2]
     alpha = [1, alpha, alpha]
     cj = [c, c]
     K = [K, K]
+    p_initial = [p0,p1,p2]
     T = 0.5
     numTsteps = 40
     u, p = biotMPET(
@@ -267,7 +269,6 @@ def test_TransientBiot():
         numTsteps,
         2,
         f,
-        g,
         alpha,
         K,
         cj,
@@ -276,17 +277,22 @@ def test_TransientBiot():
         boundary_conditionsU,
         boundary_conditionsP,
         boundary_markers,
-        boundaryNum=0,
+        g=g,
+        p_initial = p_initial,
+        boundaryNum=1,
         transient=True,
     )
 
     # Post processing
     u_e = Expression((variables[0], variables[1]), degree=2, t=T)
     p1_e = Expression(variables[3], degree=2, t=T)
+    p2_e = Expression(variables[4], degree=2, t=T)
     V_e = VectorFunctionSpace(mesh, "P", 2)
-    Q_e = FunctionSpace(mesh, "P", 1)
+    Q1_e = FunctionSpace(mesh, "P", 1)
+    Q2_e = FunctionSpace(mesh, "P", 1)
     u_e = project(u_e, V_e)
-    p1_e = project(p1_e, Q_e)
+    p1_e = project(p1_e, Q1_e)
+    p2_e = project(p2_e, Q2_e)
     vtkUEfile = File("solution_transient/u_e.pvd")
     vtkPEfile = File("solution_transient/p1_e.pvd")
     vtkUEfile << u_e
@@ -296,9 +302,68 @@ def test_TransientBiot():
     er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
 
-    plot(u)
+    pu_e = plot(u_e)
 
-    show()
+    # set colormap
+    pu_e.set_cmap("viridis")
+    #pu_e.set_clim( 0.0 , 1.0 )
+
+    # add a title to the plot
+    #pyplot.title("u_e")
+
+    # add a colorbar
+    pyplot.colorbar( pu_e );
+    pyplot.show()
+
+    pu = plot(u)
+
+    # set colormap
+    pu.set_cmap("viridis")
+    #pu.set_clim( 0.0 , 1.0 )
+
+    # add a title to the plot
+    #pyplot.title("u")
+
+    # add a colorbar
+    pyplot.colorbar( pu );
+    pyplot.show()
+
+    pp_e = plot(p1_e)
+
+    # set colormap
+    pp_e.set_cmap("viridis")
+
+    # add a colorbar
+    pyplot.colorbar( pp_e );
+    pyplot.show()
+
+    pp = plot(p[1])
+
+    # set colormap
+    pp.set_cmap("viridis")
+    #pp.set_clim( 0.0 , 1.0 )
+
+    # add a colorbar
+    pyplot.colorbar( pp );
+    pyplot.show()
+
+    pp2_e = plot(p2_e)
+
+    # set colormap
+    pp2_e.set_cmap("viridis")
+
+    # add a colorbar
+    pyplot.colorbar( pp2_e );
+    pyplot.show()
+
+    pp2 = plot(p[2])
+
+    # set colormap
+    pp2.set_cmap("viridis")
+
+    # add a colorbar
+    pyplot.colorbar( pp2 );
+    pyplot.show()
 
 def test_meshRefineBiot():
 
@@ -395,17 +460,18 @@ def test_meshRefineBiot():
     U = as_vector((u, v))
 
     # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
+    boundary_conditionsU = {1: {"Dirichlet": U}}
     # First key denotes the network, the second denotes the boundary marker
     boundary_conditionsP = {
-        (1, 0): {"Dirichlet": p1},
-        (2, 0): {"Dirichlet": p2},
+        (1, 1): {"Dirichlet": p1},
+        (2, 1): {"Dirichlet": p2},
     }
     
     g = [g1, g2]
     alpha = [1, alpha, alpha]
     cj = [c, c]
     K = [K, K]
+    p_initial = [p0,p1,p2]
     T = 0.5
     numTsteps = 4
 
@@ -425,7 +491,7 @@ def test_meshRefineBiot():
         boundary_markers.set_all(9999)
 
         bx0 = BoundaryOuter()
-        bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+        bx0.mark(boundary_markers, 1)  # Applies for all boundaries
         
     
         u, p = biotMPET(
@@ -434,7 +500,6 @@ def test_meshRefineBiot():
             numTsteps,
             2,
             f,
-            g,
             alpha,
             K,
             cj,
@@ -443,7 +508,9 @@ def test_meshRefineBiot():
             boundary_conditionsU,
             boundary_conditionsP,
             boundary_markers,
-            boundaryNum=0,
+            g = g,
+            p_initial = p_initial,
+            boundaryNum=1,
             transient=True,
         )
 
@@ -468,7 +535,7 @@ def test_meshRefineBiot():
         errorpL2.append(er2P)
         erroruH1.append(er1U)
         errorpH1.append(er1P)
-    
+        del p
         mesh = refine(mesh)
 
     print("h = ",h)
@@ -480,7 +547,8 @@ def test_meshRefineBiot():
 def convergenceRate(error,h):
     rate = [log(error[i+1]/error[i])/log(h[i+1]/h[i]) for i in range(len(error)-1)]
     return rate
+
 if __name__ == "__main__":
-    #test_TransientBiot()
 #    test_SteadyBiot()
-    test_meshRefineBiot()
+    test_TransientBiot()
+#    test_meshRefineBiot()
