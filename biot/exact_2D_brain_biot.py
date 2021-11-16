@@ -1,9 +1,14 @@
 from biot import biotMPET
-from meshes.brain_mesh_2D import generate_2D_brain_mesh
-from matplotlib.pyplot import show
+#import biot
+from meshes.brain_mesh_2D import generate_2D_brain_mesh_exact, generate_2D_brain_mesh
+#import pylab as plt
 from fenics import *
 from mshr import *
 from test_exact_biot import convergenceRate
+#from vedo.dolfin import plot,show, Latex
+from matplotlib import pyplot
+#import imp
+#imp.reload(biot)
 
 class Boundary(SubDomain):
     def inside(self, x, on_boundary):
@@ -19,17 +24,16 @@ def exact_2D_brain_biot_test_steady():
     alpha = 1.0
     c = 1.0
     K = 1.0
-    #t = sym.symbols("t")
     t = 1.0
     u = t * (
-        sym.sin(2 * sym.pi * y) * (-1 + sym.cos(2 * sym.pi * x))
-        + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
+        sym.sin(2 * sym.pi * y*1e-3) * (-1 + sym.cos(2 * sym.pi * x*1e-3))
+        + 1 / (my + Lambda) * sym.sin(sym.pi * x*1e-3) * sym.sin(sym.pi * y*1e-3)
     )
     v = t * (
-        sym.sin(2 * sym.pi * x) * (1 - sym.cos(2 * sym.pi * y))
-        + 1 / (my + Lambda) * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)
+        sym.sin(2 * sym.pi * x*1e-3) * (1 - sym.cos(2 * sym.pi * y*1e-3))
+        + 1 / (my + Lambda) * sym.sin(sym.pi * x*1e-3) * sym.sin(sym.pi * y*1e-3)
     )
-    p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
+    p1 = -t * 1 * sym.sin(sym.pi * x*1e-3) * sym.sin(sym.pi * y*1e-3)  # p Network1
     p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * p1
     epsilonxx = sym.diff(u, x, 1)
     epsilonyy = sym.diff(v, y, 1)
@@ -40,13 +44,7 @@ def exact_2D_brain_biot_test_steady():
     fy = -2 * my * (sym.diff(epsilonxy, x, 1) + sym.diff(epsilonyy, y, 1)) - sym.diff(
         p0, y, 1
     )  # calculate force term y
-    g1 = (
-        #+c * sym.diff(p1, t, 1)
-        #+ alpha / Lambda * (1 * sym.diff(p0, t, 1) + alpha * sym.diff(p1, t, 1))
-        - K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))
-    )
-    # W_1 = -K * sym.diff(p1, x)  # Flow of liquid, described by darcy's law
-    # W_2 = -K * sym.diff(p1, y)  # Flow of liquid, described by darcy's law
+    g1 = -K * (sym.diff(p1, x, 2) + sym.diff(p1, y, 2))  # calculate source term 1
 
     variables = [
         u,
@@ -61,8 +59,6 @@ def exact_2D_brain_biot_test_steady():
         fx,
         fy,
         g1,
-        #        W_1,
-        #        W_2,
     ]
 
     variables = [sym.printing.ccode(var) for var in variables]  # Generate C++ code
@@ -82,18 +78,14 @@ def exact_2D_brain_biot_test_steady():
         fx,
         fy,
         g1,
-        #        W_1,
-        #        W_2,
     ) = UFLvariables
     f = as_vector((fx, fy))
     U = as_vector((u, v))
 
     g = [g1]
     alpha = [1, alpha]
-    cj = [c]
+    c = [c]
     K = [K]
-    #T = 10
-    #numTsteps = 80
 
     mesh = generate_2D_brain_mesh(15)
 
@@ -103,14 +95,14 @@ def exact_2D_brain_biot_test_steady():
     boundary_markers.set_all(9999)
 
     bx0 = Boundary()
-    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+    bx0.mark(boundary_markers, 1)  # Applies for all boundaries
 
     # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
+    boundary_conditionsU = {1: {"Dirichlet": U}}
+
     # Define boundary conditions
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
-        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
+        (1, 1): {"Dirichlet": p1},  # Network 1, boundarymarker 1
     }
 
     u, p = biotMPET(
@@ -119,16 +111,16 @@ def exact_2D_brain_biot_test_steady():
         0,
         1,
         f,
-        g,
         alpha,
         K,
-        cj,
+        c,
         my,
         Lambda,
         boundary_conditionsU,
         boundary_conditionsP,
         boundary_markers,
-        boundaryNum=0,
+        g = g,
+        boundaryNum=1,
         transient=False,
     )
 
@@ -152,29 +144,59 @@ def exact_2D_brain_biot_test_steady():
     print("Error L2 for displacements = ", er2U)
     er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
+    
+    
+    pu_e = plot(u_e)
 
-    plot(u_e, title="u_e")
+    # set colormap
+    pu_e.set_cmap("viridis")
+    #pu_e.set_clim( 0.0 , 1.0 )
 
-    show()
+    # add a title to the plot
+    pyplot.title("u_e")
 
-    plot(u, title="u")
-    show()
+    # add a colorbar
+    pyplot.colorbar( pu_e );
+    pyplot.show()
 
-    plot(p[1], title="p1")
+    pu = plot(u)
 
-    show()
+    # set colormap
+    pu.set_cmap("viridis")
+    #pu.set_clim( 0.0 , 1.0 )
 
-    plot(p1_e, title="p1_e")
+    # add a title to the plot
+    pyplot.title("u")
 
-    show()
+    # add a colorbar
+    pyplot.colorbar( pu );
+    pyplot.show()
 
-    """W = as_vector((W_1, W_2))
-    print(W)
-    W = project(W, V_e)
+    pp_e = plot(p1_e)
 
-    plot(W, title="Fluid flow exact")
-    show()
-    """
+    # set colormap
+    pp_e.set_cmap("viridis")
+
+    # add a title to the plot
+    pyplot.title("p1_e")
+
+    # add a colorbar
+    pyplot.colorbar( pp_e );
+    pyplot.show()
+
+    pp = plot(p[1])
+
+    # set colormap
+    pp.set_cmap("viridis")
+    #pp.set_clim( 0.0 , 1.0 )
+
+    # add a title to the plot
+    pyplot.title("p1")
+
+    # add a colorbar
+    pyplot.colorbar( pp );
+    pyplot.show()
+
 
 def exact_2D_brain_biot_test_transient():
     import sympy as sym
@@ -249,12 +271,16 @@ def exact_2D_brain_biot_test_transient():
 
     g = [g1]
     alpha = [1, alpha]
-    cj = [c]
+    c = [c]
     K = [K]
+    p_initial = [p0,p1]
     T = 10
     numTsteps = 80
 
-    mesh = generate_2D_brain_mesh(15)
+    mesh = generate_2D_brain_mesh_exact(12)
+
+    #plot(mesh,mode="mesh")
+    #show()
 
     n = FacetNormal(mesh)  # normal vector on the boundary
     # Define boundary
@@ -262,14 +288,15 @@ def exact_2D_brain_biot_test_transient():
     boundary_markers.set_all(9999)
 
     bx0 = Boundary()
-    bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+    bx0.mark(boundary_markers, 1)  # Applies for all boundaries
 
-    # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
-    # Define boundary conditions
+    # Define boundary conditions for the displacements
+    boundary_conditionsU = {1: {"Dirichlet": U}}
+
+    # Define boundary conditions for the pressure
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
-        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
+        (0, 1): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
+        (1, 1): {"Dirichlet": p1},  # Network 1, boundarymarker 0
     }
 
     u, p = biotMPET(
@@ -278,16 +305,17 @@ def exact_2D_brain_biot_test_transient():
         numTsteps,
         1,
         f,
-        g,
         alpha,
         K,
-        cj,
+        c,
         my,
         Lambda,
         boundary_conditionsU,
         boundary_conditionsP,
         boundary_markers,
-        boundaryNum=0,
+        g=g,
+        p_initial = p_initial,
+        boundaryNum=1,
         transient=True,
     )
 
@@ -312,21 +340,55 @@ def exact_2D_brain_biot_test_transient():
     er2P = errornorm(p1_e, p[1], "L2")
     print("Error L2 for pressure = ", er2P)
 
-    plot(u_e, title="u_e")
+    pu_e = plot(u_e)
 
-    show()
+    # set colormap
+    pu_e.set_cmap("viridis")
+    #pu_e.set_clim( 0.0 , 1.0 )
 
-    plot(u, title="u")
-    show()
+    # add a title to the plot
+    #pyplot.title("u_e")
 
-    plot(p[1], title="p1")
+    # add a colorbar
+    pyplot.colorbar( pu_e );
+    pyplot.show()
 
-    show()
+    pu = plot(u)
 
-    plot(p1_e, title="p1_e")
+    # set colormap
+    pu.set_cmap("viridis")
+    #pu.set_clim( 0.0 , 1.0 )
 
-    show()
+    # add a title to the plot
+    #pyplot.title("u")
 
+    # add a colorbar
+    pyplot.colorbar( pu );
+    pyplot.show()
+
+    pp1_e = plot(p1_e)
+
+    # set colormap
+    pp1_e.set_cmap("viridis")
+
+    # add a title to the plot
+    #pyplot.title("p1_e")
+
+    # add a colorbar
+    pyplot.colorbar( pp1_e );
+    pyplot.show()
+
+    pp1 = plot(p[1])
+
+    # set colormap
+    pp1.set_cmap("viridis")
+    #pp.set_clim( 0.0 , 1.0 )
+
+    # add a colorbar
+    pyplot.colorbar( pp1 );
+    pyplot.show()
+
+    
 def test_2Dbrain_Biot_Convergence():
     import sympy as sym
 
@@ -347,6 +409,7 @@ def test_2Dbrain_Biot_Convergence():
     )
     p1 = -t * 1 * sym.sin(sym.pi * x) * sym.sin(sym.pi * y)  # p Network1
     p0 = Lambda * (sym.diff(u, x, 1) + sym.diff(v, y, 1)) - alpha * p1
+
     epsilonxx = sym.diff(u, x, 1)
     epsilonyy = sym.diff(v, y, 1)
     epsilonxy = 1 / 2 * (sym.diff(u, y, 1) + sym.diff(v, x, 1))
@@ -400,27 +463,29 @@ def test_2Dbrain_Biot_Convergence():
 
     g = [g1]
     alpha = [1, alpha]
-    cj = [c]
+    c = [c]
     K = [K]
+    p_initial = [p0,p1]
     T = 0.5
     numTsteps = 4
 
     # Define boundary conditions
-    boundary_conditionsU = {0: {"Dirichlet": U}}
+    boundary_conditionsU = {1: {"Dirichlet": U}}
     # Define boundary conditions
     boundary_conditionsP = {
-        (0, 0): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
-        (1, 0): {"Dirichlet": p1},  # Network 1, boundarymarker 0
+        (0, 1): {"Dirichlet": p0},  # Total pressure, boundarymarker 0
+        (1, 1): {"Dirichlet": p1},  # Network 1, boundarymarker 0
     }
     
-    mesh = generate_2D_brain_mesh(5)
+    mesh = generate_2D_brain_mesh_exact(6)
 
     erroruL2 = []
     errorpL2 = []
     erroruH1 = []
     errorpH1 = []
     h = []
-    
+
+    #For each mesh refinement 
     for n in range(4):
         
         plot(mesh)
@@ -431,7 +496,7 @@ def test_2Dbrain_Biot_Convergence():
         boundary_markers.set_all(9999)
 
         bx0 = Boundary()
-        bx0.mark(boundary_markers, 0)  # Applies for all boundaries
+        bx0.mark(boundary_markers, 1)  # Applies for all boundaries
         
     
         u, p = biotMPET(
@@ -440,19 +505,19 @@ def test_2Dbrain_Biot_Convergence():
             numTsteps,
             1,
             f,
-            g,
             alpha,
             K,
-            cj,
+            c,
             my,
             Lambda,
             boundary_conditionsU,
             boundary_conditionsP,
             boundary_markers,
-            boundaryNum=0,
+            g=g,
+            p_initial = p_initial,
+            boundaryNum=1,
             transient=True,
         )
-
         # Post processing
         u_e = Expression((variables[0], variables[1]), degree=4, t=T)
         p1_e = Expression(variables[3], degree=3, t=T)
@@ -474,8 +539,9 @@ def test_2Dbrain_Biot_Convergence():
         errorpL2.append(er2P)
         erroruH1.append(er1U)
         errorpH1.append(er1P)
-    
+
         mesh = refine(mesh)
+
     print(h) 
     print("Convergence rate for displacement using L2: ",convergenceRate(erroruL2, h))
     print("Convergence rate for pressure 1 using L2: ",convergenceRate(errorpL2, h))
@@ -484,6 +550,6 @@ def test_2Dbrain_Biot_Convergence():
 
 
 if __name__ == "__main__":
-    #exact_2D_brain_biot_test_steady()
+    exact_2D_brain_biot_test_steady()
     #exact_2D_brain_biot_test_transient()
-    test_2Dbrain_Biot_Convergence()
+    #test_2Dbrain_Biot_Convergence()
