@@ -29,7 +29,6 @@ def biotMPET(
     Compliance=None,
     Resistance=None,
     filesave = "solution_transient",
-    **kwargs,
 ):
     ds = Measure("ds", domain=mesh, subdomain_data=boundary_markers)
     n = FacetNormal(mesh)  # normal vector on the boundary
@@ -40,17 +39,14 @@ def biotMPET(
         progress = 0
     elif transient:  # Will need to be saved during calculation
         dt = T / numTsteps
-        print(dt)
-#        vtkU = File(filesave + "/u.pvd")
-#        vtkP1 = File(filesave +"/p1.pvd")
-#        vtkP0 = File(filesave + "/p0.pvd")
-        xdmfU = XDMFFile(filesave + "/u.xdmf")
-        xdmfP0 = XDMFFile(filesave + "/p0.xdmf")
-        xdmfP1 = XDMFFile(filesave + "/p1.xdmf")        
-
         # Add progress bar
         progress = Progress("Time-stepping", numTsteps)
         set_log_level(LogLevel.PROGRESS)
+
+    xdmfU = XDMFFile(filesave + "/u.xdmf")
+    xdmfP0 = XDMFFile(filesave + "/p0.xdmf")
+    xdmfP1 = XDMFFile(filesave + "/p1.xdmf")        
+
 
     if WindkesselBC:
         p_VEN = p_initial[1].p_VEN
@@ -68,15 +64,15 @@ def biotMPET(
 
         
     # Generate function space
+    V = VectorElement("CG", mesh.ufl_cell(), 1, dim=mesh.topology().dim())  # Displacements
+    V_test = FunctionSpace(mesh, V)
 
-    V = VectorElement("CG", triangle, 2, dim=mesh.topology().dim())  # Displacements
-
-    Q_0 = FiniteElement("CG", triangle, 1)  # Total pressure
+    Q_0 = FiniteElement("CG", mesh.ufl_cell(), 1)  # Total pressure
     mixedElement = []
     mixedElement.append(V)
     mixedElement.append(Q_0)
     for i in range(numPnetworks):
-        Q = FiniteElement("CG", triangle, 1)
+        Q = FiniteElement("CG", mesh.ufl_cell(), 1)
         mixedElement.append(Q)
 
     W_element = MixedElement(mixedElement)
@@ -347,13 +343,12 @@ def biotMPET(
             p_SAS = p_SAS_next
             p_VEN = p_VEN_next
 
-        if transient:
-            #vtkU << (up.sub(0), t)
-            #vtkP0 << (up.sub(1), t)
-            #vtkP1 << (up.sub(2), t)
-            xdmfU.write(up.sub(0), t)
-            xdmfP0.write(up.sub(1), t)
-            xdmfP1.write(up.sub(2), t)
+        #vtkU << (up.sub(0), t)
+        #vtkP0 << (up.sub(1), t)
+        #vtkP1 << (up.sub(2), t)
+        xdmfU.write(up.sub(0), t)
+        xdmfP0.write(up.sub(1), t)
+        xdmfP1.write(up.sub(2), t)
 
         up_n.assign(up)
         progress += 1

@@ -14,7 +14,7 @@ import imp
 
     
 def run_physical_2D_brain_WindkesselBC(n=20):
-    mesh = generate_2D_brain_mesh(n)
+    mesh = generate_2D_brain_mesh_mm(n)
 
     n = FacetNormal(mesh)  # normal vector on the boundary
     # Define boundary
@@ -29,17 +29,16 @@ def run_physical_2D_brain_WindkesselBC(n=20):
     bx2.mark(boundary_markers, 3)  # Overwrites the channel ventricles boundary
     #Defining material parameters and expressions
     E = 1500
-    nu = 0.479
+    nu = 0.49
     my = E/(2*(1+nu))
     Lambda = nu*E/((1+nu)*(1-2*nu))
     conversionP = 133.32#Pressure conversion: mmHg to Pa
     
     alpha = 0.49
     c = 10e-6
-    kappa = 1e-16*1e6 # [m² to mm²]
-    mu_f = 0.8e-3
-    tune = 0.0 #For suppressing instabilities
-    K = kappa/mu_f*(1+tune)
+    kappa = 4e-15*1e6 #[m²  to mm²]
+    mu_f = 0.7e-3
+    K = kappa/mu_f
     t = sym.symbols("t")
     p_VEN = sym.symbols("p_VEN")
     p_SAS = sym.symbols("p_SAS")
@@ -50,10 +49,10 @@ def run_physical_2D_brain_WindkesselBC(n=20):
     pSkull = p_SAS
     pVentricles = p_VEN
 
-    Compliance = 2.5e3/conversionP # [microL/mmHg] to [mm³/Pa]
-    Resistance = 10.81*conversionP*60e-3 # [mmHg*min/microL] to [Pa*s/mm³]
-    beta_VEN = 1.0
-    beta_SAS = 1.0
+    Compliance = 2.5e3/conversionP # [microL/mmHg] to [mm^3/Pa]
+    Resistance = 10.81*conversionP*60e-3 # [mmHg*min/microL] to [Pa*s/mm^3]
+    beta_VEN = 0.1
+    beta_SAS = 0.1
     
     print("C=",Compliance)
     print("R=",Resistance)
@@ -99,7 +98,7 @@ def run_physical_2D_brain_WindkesselBC(n=20):
     K = [K]
     p_init = [p_initial0, p_initial1]
     T = 3
-    numTsteps = 30
+    numTsteps = 300
 
     source_scale = 1/1173670.5408281302 
     g = [ReadSourceTerm(mesh,source_scale)]
@@ -177,7 +176,7 @@ def run_physical_2D_brain_periodicBC(n = 20):
             print("%s is on x = 2" % x)
     
     E = 1500
-    nu = 0.479
+    nu = 0.49
     my = E/(2*(1+nu))
     Lambda = nu*E/((1+nu)*(1-2*nu))
     conversionP = 133.32#Pressure conversion: mmHg to Pa
@@ -185,18 +184,18 @@ def run_physical_2D_brain_periodicBC(n = 20):
     p_initial1 = 0.0
     alpha = 0.49
     c = 10e-6
-    kappa = 1e-16*1e6 #[m² to mm²]
-    mu_f = 0.8e-3
-    tune = 100000 #For suppressing instabilities
-    K = kappa/mu_f
+    kappa = 4e-15*1e6 #[m^2 to mm^2]
+    mu_f = 0.7e-3
+    tune = 100 #For suppressing instabilities
+    K = kappa/mu_f*tune
     t = sym.symbols("t")
     fx = 0  # force term x-direction
     fy = 0  # force term y-direction
     p0 = 0.075*conversionP
     p_VEN = p0*sym.sin(2*sym.pi*t)
     p_initial0 = -alpha*p_initial1
-    beta_SAS = 2.0
-    beta_VEN = 10.0
+    beta_SAS = 0.2
+    beta_VEN = 0.2
 
     
     
@@ -313,7 +312,7 @@ def run_physical_2D_brain_periodicBC_meter(n = 20):
             print("%s is on x = 2" % x)
     
     E = 1500
-    nu = 0.479
+    nu = 0.49
     my = E/(2*(1+nu))
     Lambda = nu*E/((1+nu)*(1-2*nu))
     conversionP = 133.32#Pressure conversion: mmHg to Pa
@@ -321,10 +320,10 @@ def run_physical_2D_brain_periodicBC_meter(n = 20):
     p_initial1 = 0.0
     alpha = 0.49
     c = 10e-6
-    kappa = 1e-16 #[m² to mm²]
-    mu_f = 0.8e-3
-    tune = 100000 #For suppressing instabilities
-    K = kappa/mu_f
+    kappa = 4e-15
+    mu_f = 0.7e-3
+    tune = 1000 #For suppressing instabilities
+    K = kappa/mu_f*tune
     t = sym.symbols("t")
     fx = 0  # force term x-direction
     fy = 0  # force term y-direction
@@ -333,7 +332,6 @@ def run_physical_2D_brain_periodicBC_meter(n = 20):
     p_initial0 = -alpha*p_initial1
     beta_SAS = 1.0
     beta_VEN = 1.0
-
     
     
     variables = [
@@ -374,7 +372,7 @@ def run_physical_2D_brain_periodicBC_meter(n = 20):
     K = [K]
     p_init = [p_initial0, p_initial1]
     T = 3
-    numTsteps = 30
+    numTsteps = 300
 
     
     boundary_conditionsU = {
@@ -408,7 +406,7 @@ def run_physical_2D_brain_periodicBC_meter(n = 20):
         g = [None, None],
         p_initial = p_init,
         transient=True,
-        filesave = "results/2D_brain_periodicBC",
+        filesave = "results/2D_brain_periodicBC_meter",
     )
     
 
@@ -431,7 +429,7 @@ def ReadSourceTerm(mesh,source_scale=1.0,periods = 3):
                    source = Constant(float(row[1])*source_scale) #Uniform source on the domain
                    source = project(source, Q)
                    g.store(source.vector(),float(row[0]) + i*time_period)
-                   print(f'\t timestep {row[0]} adding {row[1]} to the source.')
+                   print(f"\t timestep {row[0]} adding {row[1]} to the source.")
                    line_count += 1
             if i == 0:
                 time_period = float(row[0])
@@ -457,5 +455,5 @@ class BoundaryChannel(SubDomain):
 if __name__ == "__main__":
     n = 30
 #    run_physical_2D_brain_WindkesselBC(n)
-#    run_physical_2D_brain_periodicBC()
-    run_physical_2D_brain_periodicBC_meter()
+    run_physical_2D_brain_periodicBC(n)
+    #run_physical_2D_brain_periodicBC_meter(n)
