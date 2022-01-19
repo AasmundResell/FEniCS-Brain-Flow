@@ -1,10 +1,10 @@
 from fenics import *
 from dolfin_adjoint import *
-from ufl_dnn.neural_network import ANN
+from ufl_dnn.neural_network import ANN,sigmoid
 from matplotlib.pyplot import show
-
+import ufl
 # Manufature solution
-
+import autograd.numpy as np
 import sympy as sym
 
 x, y = sym.symbols("x[0], x[1]")
@@ -39,10 +39,10 @@ plot(f_ex)
 
 show()
 
-bias = [True, True]
+bias = [True, False]
 x, y = SpatialCoordinate(mesh)
 
-net = ANN(layers, bias=bias, mesh=mesh)
+net = ANN(layers, bias=bias, mesh=mesh, output_activation = None)
 E = K * inner(grad(u), grad(v)) * dx + net(x, y) * v * dx
 bcs = DirichletBC(V, Constant(0.0), "on_boundary")
 hat_u = Function(V)
@@ -66,6 +66,8 @@ opt_theta = minimize(
     hat_loss, options={"disp": True, "gtol": 1e-12, "ftol": 1e-12, "maxiter": 20}
 )
 print(opt_theta)
+print(len(opt_theta))
+
 net.set_weights(opt_theta)
 
 

@@ -320,8 +320,8 @@ def run_3D_brain_WindkesselBC():
     beta_VEN = 1.0
 
     #print("Reading and scaling source term...")
-    source_scale = read_brain_scale(mesh) 
-    g = [ReadSourceTerm(mesh,source_scale)]
+    #source_scale = read_brain_scale(mesh) 
+    #g = [ReadSourceTerm(mesh,source_scale)]
     
     boundary_conditionsU = {
         1: {"Dirichlet": U},
@@ -354,7 +354,7 @@ def run_3D_brain_WindkesselBC():
         boundaryNum=3,
         p_initial = p_init,
         transient=True,
-        g = g,
+        g = [None,None],
         WindkesselBC = True,
         Resistance = Resistance,
         Compliance = Compliance,
